@@ -1,0 +1,20 @@
+{
+    "name": "codename-t/auth-reciever",
+    "autoload": {
+        "psr-4": {
+            "AuthReciever\\": "src/"
+        }
+    },
+    "authors": [
+        {
+            "name": "Codename_T",
+            "email": "moking55@hotmail.com"
+        }
+    ],
+    "require": {
+        "nilportugues/sql-query-builder": "^1.8"
+    },
+    "require-dev": {
+        "maxbanton/dd": "2.0"
+    }
+}
