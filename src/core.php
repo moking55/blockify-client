@@ -12,13 +12,15 @@ class ClientReciever
 
     private $qBuilder;
     private $conn;
+    private $result;
 
     public function __construct()
     {
         $dsn = 'mysql:host=' . $this->host . ';dbname=' . $this->dbname;
         $options = array(
             PDO::ATTR_PERSISTENT => true,
-            PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION
+            PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+            PDO::MYSQL_ATTR_FOUND_ROWS => true
         );
         try {
             $this->conn = new PDO($dsn, $this->dbuser, $this->dbpass, $options);
@@ -32,9 +34,10 @@ class ClientReciever
 
     private function getPlayerData(string $playerName)
     {
+        $hasFound = false;
         $builder = $this->qBuilder->select();
         $builder->setTable($this->tbname);
-        $builder->setColumns(["username", "password"]);
+        $builder->setColumns(["username", "password", "player_credits"]);
         $builder->where()->like("username", $playerName)->end();
 
         $stmt = $this->conn->prepare($this->qBuilder->write($builder));
@@ -45,13 +48,14 @@ class ClientReciever
         $stmt->execute();
 
         if ($result = $stmt->fetchObject()) {
-            $result->hasFound = true;
-            $result->password = $result->password;
-            return $result;
+            $hasFound = true;
+            return (object)[
+                'hasFound' => $hasFound,
+                "password" => $result->password,
+                "player_credits" => intVal($result->player_credits)
+            ];
         }
-        return [
-            "hasFound" => $result
-        ];
+        return (object)['hasFound' => $hasFound];
     }
     private function isValidBCryptPassword($password, $hash)
     {
@@ -60,6 +64,24 @@ class ClientReciever
     private function isValidTextPassword($password, $inGamePassword)
     {
         return $password === $inGamePassword;
+    }
+    public function getPlayerCreditByName(string $playerName)
+    {
+        $builder = $this->qBuilder->select()
+            ->setTable($this->tbname)
+            ->setColumns(['player_credits', 'username'])
+            ->where()->like("username", "%" . $playerName . "%")->end();
+        $stmt = $this->conn->prepare($this->qBuilder->write($builder));
+        $values = $this->qBuilder->getValues();
+        foreach ($values as $key => &$val) {
+            $stmt->bindParam($key, $val);
+        }
+        $stmt->execute();
+        if ($data = $stmt->fetch()) {
+            return ['player_credits' => intVal($data['player_credits']), 'username' => $data['username']];
+        }
+        header("HTTP/1.1 500 Internal Server Error");
+        return ["error" => "Player not found"];
     }
     protected function isValidSHAPassword($password, $hash)
     {
@@ -71,7 +93,8 @@ class ClientReciever
     public function checkLogin(string $playerName, string $playerPassword)
     {
         if (!($result = $this->getPlayerData($playerName))->hasFound) {
-            return "error";
+            header("HTTP/1.1 500 Internal Server Error");
+            die(json_encode(["error" => "Player not found"]));
         }
         switch (HASH_ALGO) {
             case 'SHA256':
@@ -83,11 +106,39 @@ class ClientReciever
             case 'TEXT':
                 $isValidPassword = $this->isValidTextPassword($playerPassword, $result->password);
                 break;
-
             default:
                 $isValidPassword = false;
                 break;
         }
-        return $isValidPassword;
+        return ["isValidPassword" => $isValidPassword, "credits" => $result->player_credits];
+    }
+
+    public function updatePlayerCredit(int $credit, string $playerName)
+    {
+        $builder = $this->qBuilder->update()->setTable($this->tbname)
+            ->setValues([
+                'player_credits' => $credit
+            ])
+            ->where()
+            ->like("username", "%" . $playerName . "%")
+            ->end();
+        $stmt = $this->conn->prepare($this->qBuilder->write($builder));
+        $values = $this->qBuilder->getValues();
+        foreach ($values as $key => &$val) {
+            $stmt->bindParam($key, $val);
+        }
+        try {
+            $result = $stmt->execute();
+            if ($result) {
+                return [
+                    "updated" => true,
+                    "message" => "Player credit update successfully.",
+                    "totalCredit" => intval($this->getPlayerCreditByName($playerName)['player_credits'])
+                ];
+            }
+        } catch (\Throwable $th) {
+            return ["updated" => false, "message" => $th->getMessage()];
+        }
+        //return $this->qBuilder->writeFormatted($builder);
     }
 }

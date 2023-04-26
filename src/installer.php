@@ -83,28 +83,13 @@ session_start();
                         </div>
                         <div style="padding: 1em">
                             <?php switch ($steps):
-                                case "1": ?>
+                                case "1":
+                                    $term = file_get_contents('./term.txt');
+                            ?>
                                     <p>ก่อนเริ่มขึ้นตอนถัดไปโปรดอ่านข้อกำหนดการใช้งานของเรา </p>
                                     <textarea cols="30" rows="10" readonly style="overflow: scroll;min-width: 100%;max-width: 100%">
-กรุณาอ่านและทำความเข้าใจรายละเอียดในข้อตกลงและเงื่อนไขการใช้งานนี้โดยละเอียดก่อนกดปุ่ม ‘ตกลง’ ยอมรับข้อตกลงและเงื่อนไขการใช้งานนี้
-
-1. การใช้งานเว็บไซต์
-ท่านตกลงและยอมรับข้อกำหนดดังต่อไปนี้
-
-(i)        ปฏิบัติตามกฎหมาย หลักเกณฑ์  ระเบียบ ที่เกี่ยวข้อง ที่มีผลใช้บังคับในปัจจุบันและที่จะมีการแก้ไขหรือเพิ่มเติมในอนาคต
-
-(ii)    การเข้าถึงและ/หรือเข้าใช้งานเว็บไซต์ของบริษัทฯ เป็นการยอมรับข้อกำหนดและเงื่อนไขที่ปรากฏ ณ ขณะที่เข้าถึงหรือใช้งาน และ ที่มีการเปลี่ยนแปลงหรือทำให้เป็นปัจจุบันในแต่ละช่วงเวลาในอนาคตว่ามีผลผูกพันตามกฎหมาย  
-
-(iii)      มีหน้าที่จัดหาอุปกรณ์เพื่อการใช้งานที่ปลอดภัย เช่น ไม่ใช้งานเครื่องมือหรืออุปกรณ์ใดๆ ที่มี การเจลเบรคหรือรูท (Jailbreak / Root) หรือ อื่นใดในทำนองเดียวกัน  
-
-(iv)      มีหน้าที่จัดหาบริการเครือข่ายอินเทอร์เน็ต เครือข่ายโทรศัพท์มือถือ อุปกรณ์ใช้งาน ซอฟต์แวร์ แพลทฟอร์ม (Platform) และ/หรือ บริการอื่นใดจากผู้ให้บริการเหล่านั้น เพื่อทำการติดตั้ง เข้าถึงและใช้งานเว็บไซต์ด้วยค่าใช้จ่ายของตนเอง  และ ปฏิบัติตามเงื่อนไขและข้อตกลงต่างๆ ตามที่ผู้ให้บริการเหล่านั้นกำหนด  ซึ่งเป็นปัจจัยภายนอกที่นอกเหนือการควบคุมของบริษัทฯที่อาจส่งผลกระทบต่อคุณภาพและความสะดวกในการใช้เว็บไซต์นี้
-
-(v)       ข้อมูลที่ท่านได้ให้กับบริษัทฯผ่านการใช้เว็บไซต์นี้ มีความครบถ้วน ถูกต้อง และ เป็นจริง
-
-(vi)      ปรับปรุงบัญชีผู้ใช้งานหรือชื่อผู้ใช้งาน (หากมี) ให้ถูกต้องและตรงต่อความเป็นจริงในปัจจุบันเสมอ
-
-(vii)   เก็บรักษารหัสผ่านเข้าใช้งาน (หากมี) ที่ตั้งขึ้นจะไม่เปิดเผยให้บุคคลอื่นทราบ ในกรณีที่ไม่ปฎิบัติตาม ผู้ใช้งานตกลงรับผิดชอบการกระทำที่เกิดขึ้นกับบัญชีการใช้งานจากการกระทำของบุคคลนั้น
-                        </textarea>
+<?= $term ?>
+                                </textarea>
                                     <center>
                                         <a href="?step=2"><button class="default">ดำเนินการต่อ</button></a>
                                     </center>
@@ -190,6 +175,8 @@ session_start();
                                     </form>
                                 <?php break;
                                 case "3":
+                                    $hasError = false;
+                                    $errorMessage = "";
                                     if (!empty($_POST)) {
                                         $_POST['client_id'] = substr(str_shuffle("0123456789abcdefghijklmnopqrstuvwxyz"), 0, 10);
                                         $_SESSION['config'] = $_POST;
@@ -197,7 +184,41 @@ session_start();
                                     if (empty($_SESSION['config'])) {
                                         header("Location: ./installer.php?step=2");
                                     }
-                                    //var_dump($_SESSION['config']);
+                                    $dsn = 'mysql:host=' . $_SESSION['config']['db_host'] . ';dbname=' . $_SESSION['config']['db_name'];
+                                    $options = array(
+                                        PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION
+                                    );
+                                    try {
+                                        $dbl = new PDO($dsn, $_SESSION['config']['db_user'], $_SESSION['config']['db_pass'], $options);
+                                        // Check if the procedure exists
+                                        $query = "SELECT COUNT(*) FROM INFORMATION_SCHEMA.ROUTINES WHERE ROUTINE_SCHEMA = '" . $_SESSION['config']['db_name'] . "' AND ROUTINE_NAME = 'add_player_credits_column'";
+                                        $stmt = $dbl->query($query);
+                                        $result = $stmt->fetchColumn();
+
+                                        if ($result == 0) {
+                                            // Create the procedure if it doesn't exist
+                                            $query = "CREATE PROCEDURE add_player_credits_column()
+                                                        BEGIN
+                                                            DECLARE existColumn INT DEFAULT 0;
+                                                            SELECT COUNT(*) INTO existColumn FROM INFORMATION_SCHEMA.COLUMNS
+                                                            WHERE TABLE_SCHEMA = '" . $_SESSION['config']['db_name'] . "' AND TABLE_NAME = `" . $_SESSION['config']['table_name'] . "` AND COLUMN_NAME = `player_credits`;
+                                                            IF existColumn = 0 THEN
+                                                                ALTER TABLE authme ADD COLUMN player_credits INT NOT NULL DEFAULT 0 AFTER `password`;
+                                                            END IF;
+                                                        END;";
+                                            $dbl->exec($query);
+                                        }
+
+                                        // Call the procedure
+                                        $query = "CALL add_player_credits_column();";
+                                        $dbl->exec($query);
+                                    } catch (\Throwable $th) {
+                                        $hasError = true;
+                                        $errorMessage = $th->getMessage();
+                                    }
+
+
+                                    if(!$hasError):
                                 ?>
 
                                     <h4 style="margin-bottom: 1em;">ขั้นตอนที่ 2: เชื่อมต่อกับเรา</h4>
@@ -207,6 +228,16 @@ session_start();
                                         <a href="?step=2"><button>ย้อนกลับ</button></a>
                                         <a href="?step=4"><button class="default">ดำเนินการต่อ</button></a>
                                     </center>
+                                    <?php else: ?>
+                                        <h4 style="margin-bottom: 1em;">ขั้นตอนที่ 2: เชื่อมต่อกับเรา</h4>
+                                        <p style="margin: 0">เกิดข้อผิดพลาดบางอย่างโปรดลองใหม่อีกครั้ง</p>
+                                        <p style="margin: 0">หากปัญหายังคงอยู่ติดต่อทีมงานเพื่อแก้ไขต่อไป</p>
+                                        <p style="margin-bottom: 1em">ข้อผิดพลาด : <strong><?= $errorMessage ?></strong></p>
+                                        <center>
+                                            <a href="?step=2"><button type="button">ย้อนกลับ</button></a>
+                                            <button type="button" disabled>ดำเนินการต่อ</button>
+                                        </center>
+                                    <?php endif; ?>
                                 <?php break;
                                 case "4":
                                     if (empty($_SESSION['config'])) {
